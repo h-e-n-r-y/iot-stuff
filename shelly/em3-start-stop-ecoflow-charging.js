@@ -1,9 +1,10 @@
 /*
-  Script to use with a Shelly PRO 3 EM.
+  Script to be used with a Shelly PRO 3 EM.
   Control another Shelly Switch by monitoring Total Power.
   Can be used to charge a battery (i.e. EcoFlow) instead of giving power to the grid.
   Configuration:
     use KVS to store phone and apikeycallmebot if you wish to have whatsapp notifications.
+    See also: https://www.callmebot.com/blog/free-api-whatsapp-messages/
 */
 let CONFIG = {
     // every minute
