@@ -1,11 +1,24 @@
 /*
   Script to be used with a Shelly PRO 3 EM.
-  Control another Shelly Switch by monitoring Total Power.
+  Control another Shelly Switch by monitoring Power (of a specific phase ot total).
   Can be used to charge a battery (i.e. EcoFlow) instead of giving power to the grid.
+  The charging power of the ecoflow is dynamically adapted based on the actual power.
+  To achieve this, the Shelly PRO 3 EM hast to be connected to ecoflow via MQTT.
+  You need the right credentials/clientId for MQTT.
+  I used https://raw.githubusercontent.com/mmiller7/ecoflow-withoutflow/main/cloud-mqtt/ecoflow_get_mqtt_login.sh
+  for this purpose.
+  Currently only Ecoflow Delta Max is supported. It can be easily adapted for Delta 2.
+
   Configuration:
-    use KVS to store phone and apikeycallmebot if you wish to have whatsapp notifications.
+    use KVS to store 'phone' and 'apikeycallmebot' if you wish to have WhatsApp notifications.
     See also: https://www.callmebot.com/blog/free-api-whatsapp-messages/
-    set ecoflowcid and ecoflowsn in KVS
+
+    To communicate to your ecoflow set 'ecoflow' in KVS with the JSON value like
+    {
+        "sn": "your ecoflow SN",
+        "cid": "your ecoflow mqtt client id"
+    }
+
 */
 let CONFIG = {
     checkingTime: 10 * 1000, // check every 10 seconds
