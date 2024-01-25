@@ -52,7 +52,7 @@ function getPowerAndAdaptCharging() {
                 shift()
             }
 
-            if (ecoFlowCharging && (power < 0 || power > CONFIG.powerThreshold)) {
+            if (MQTT.isConnected() && ecoFlowCharging && (power < 0 || power > CONFIG.powerThreshold)) {
                 let newChargingPower = -(power - chargingPower)
                 print ("new charging power: " + newChargingPower)
                 setEcoflowChargingPower(newChargingPower)
@@ -169,7 +169,7 @@ function initConfig() {
             setEcoflowChargingPower(1)
             switchEcoflow(true)
 
-            let timer = Timer.set(CONFIG.checkingTime, true, getPowerAndAdaptCharging);
+            Timer.set(CONFIG.checkingTime, true, getPowerAndAdaptCharging);
         }
     );
 
