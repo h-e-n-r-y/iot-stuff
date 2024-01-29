@@ -26,7 +26,7 @@ let CONFIG = {
     phase: "b_act_power", // Phase! other values: a_act_power, c_act_power or total_act_power
     powerThresholdMin: -60, // start charging or increase charging power when power is less than
     powerThresholdMax: 20, // stop charging or decrease charging power when power is more than
-    chargingStep: 50, // change charing power in steps of chargingStep watts
+    chargingStep: 50, // change charging power in steps of chargingStep watts
     maxCharging: 1500, // set maximum charging power for ecoflow
     lockingTime: 5, // after changing charge speed wait n times before changing again
 };
