@@ -26,14 +26,21 @@ let CONFIG = {
     phase: "b_act_power", // Phase! other values: a_act_power, c_act_power or total_act_power
     powerThresholdMin: -60, // start charging or increase charging power when power is less than
     powerThresholdMax: 20, // stop charging or decrease charging power when power is more than
-    chargingStep: 50, // change charging power in steps of chargingStep watts
+    chargingStep: 25, // change charging power in steps of chargingStep watts
     maxCharging: 1500, // set maximum charging power for ecoflow
     lockingTime: 5, // after changing charge speed wait n times before changing again
 };
 
 let phone
 let apikeycallmebot
-let ecoflow
+let ecoflow = {
+    cid: "",
+    batteries: [{
+        sn: "sn",
+        type: "DELTA Max"
+    }],
+    parallel_charging: true
+}
 
 let ecoFlowCharging = false;
 
@@ -46,7 +53,7 @@ function getPowerAndAdaptCharging() {
             let avgPower = Power.median()
 
             let newChargingPower = 0
-            if (MQTT.isConnected() && ecoFlowCharging && !Power.powerChangeLocked()) {
+            if (ecoFlowCharging && !Power.powerChangeLocked()) {
                 if (avgPower < CONFIG.powerThresholdMin) {
                     newChargingPower = Power.chargingPower + CONFIG.chargingStep
                     setEcoflowChargingPower(newChargingPower)
@@ -56,12 +63,16 @@ function getPowerAndAdaptCharging() {
                     setEcoflowChargingPower(newChargingPower)
                 }
             }
-            print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower)
+            if (ecoFlowCharging) {
+                print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower)
+            } else {
+                print("Power: " + power + " Avg: " + avgPower + " not charging.")
+            }
 
-            if (!ecoFlowCharging && (avgPower < CONFIG.powerThresholdMin)) {
+            if (!ecoFlowCharging && !Power.powerChangeLocked() && (avgPower < CONFIG.powerThresholdMin)) {
                 print ("Start Charging!")
                 switchEcoflow(true)
-            } else if (ecoFlowCharging && (avgPower > CONFIG.powerThresholdMax) && Power.chargingPower === 0) {
+            } else if (ecoFlowCharging && !Power.powerChangeLocked() && (avgPower > CONFIG.powerThresholdMax) && Power.chargingPower === 0) {
                 print ("Stop Charging!")
                 switchEcoflow(false)
             }
@@ -91,6 +102,9 @@ function switchEcoflow(on) {
 }
 
 function setEcoflowChargingPower(watts) {
+    if(!MQTT.isConnected()) {
+        return
+    }
     // round to CONFIG.chargingStep
     watts /= CONFIG.chargingStep
     watts = Math.round(watts) * CONFIG.chargingStep
@@ -101,20 +115,21 @@ function setEcoflowChargingPower(watts) {
         watts = CONFIG.maxCharging
     }
     if (watts !== Power.chargingPower) {
-        print("Setting ecoflow chargingPower to " + watts)
-        let msg = {
-            from: "iOS",
-            operateType: "TCP",
-            id: "694572336",
-            lang: "en-us",
-            params: {
-                id: 69,
-                slowChgPower: watts
-            },
-            version: "1.0"
-        }
-        // print("topic: " + "/app/" + ecoflow.cid+ "/" + ecoflow.sn + "/thing/property/set" + "  message: " + JSON.stringify(msg))
-        MQTT.publish("/app/" + ecoflow.cid + "/" + ecoflow.sn + "/thing/property/set", JSON.stringify(msg), 0, false);
+        print("Setting ecoflow charging power to " + watts)
+
+        ecoflow.batteries.forEach(function(battery) {
+            let msg
+            if (battery.type === "DELTA Max") {
+                msg = DeltaMax.changeChargingPowerMsg(battery.sn, watts)
+            } else if (battery.type === "DELTA 2") {
+                msg = Delta2.changeChargingPowerMsg(battery.sn, watts)
+            } else {
+                print ("Battery type not supported: " + battery.type)
+                return
+            }
+            // print("topic: " + "/app/" + ecoflow.cid+ "/" + ecoflow.sn + "/thing/property/set" + "  message: " + JSON.stringify(msg))
+            MQTT.publish("/app/" + ecoflow.cid + "/" + battery.sn + "/thing/property/set", JSON.stringify(msg), 0, false);
+        })
         Power.chargingPower = watts
         Power.changePowerLock = CONFIG.lockingTime
     }
@@ -142,7 +157,9 @@ function initConfig() {
             phone  = response.items.phone.value
             apikeycallmebot = response.items.apikeycallmebot.value
             ecoflow = JSON.parse(response.items.ecoflow.value)
+            ecoflow.batteries = JSON.parse(response.items.batteries.value)
 
+            print ("ecoflow configuration from KVS: " + JSON.stringify(ecoflow))
             setEcoflowChargingPower(0)
             switchEcoflow(true)
 
@@ -191,5 +208,41 @@ let Power = {
         }
         this.history[this.history.length - 1] = 0
         this.changePowerLock--
+    }
+
+}
+
+let DeltaMax = {
+    changeChargingPowerMsg: function (sn, watts) {
+        return {
+            from: "iOS",
+            operateType: "TCP",
+            id: "694572336",
+            lang: "en-us",
+            params: {
+                id: 69,
+                slowChgPower: watts
+            },
+            version: "1.0"
+        }
+    }
+}
+
+let Delta2 = {
+    minChargingPower: 1,
+    changeChargingPowerMsg: function (sn, watts) {
+        return {
+            params: {
+                chgWatts: watts < this.minChargingPower ? this.minChargingPower : watts,
+                chgPauseFlag: 0
+            },
+            from: "iOS",
+            lang: "en-us",
+            id: "630479220",
+            moduleSn: sn,
+            moduleType: 5,
+            operateType: "acChgCfg",
+            version: "1.0"
+        }
     }
 }
