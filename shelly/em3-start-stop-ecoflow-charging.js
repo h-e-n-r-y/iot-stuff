@@ -83,7 +83,7 @@ function getPowerAndAdaptCharging() {
 
 
 function switchEcoflow(on) {
-    print ("request: http://" + CONFIG.shellySwitch + "/rpc/Switch.Set?id=0&on=" + on)
+    // print ("request: http://" + CONFIG.shellySwitch + "/rpc/Switch.Set?id=0&on=" + on)
     Shelly.call(
         "HTTP.GET",
         {url: "http://" + CONFIG.shellySwitch + "/rpc/Switch.Set?id=0&on=" + on},
@@ -144,7 +144,7 @@ function notify(message) {
                 if (error_code !== 0) {
                     print("Error! " + error_message);
                 } else {
-                    print("Success sending message: " + result.body);
+                    // print("Success sending message: " + result.body);
                 }
             });
     }
