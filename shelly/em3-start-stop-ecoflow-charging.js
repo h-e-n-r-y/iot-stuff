@@ -22,10 +22,11 @@
 */
 let CONFIG = {
     checkingTime: 10 * 1000, // check every 10 seconds
-    shellySwitch: "shelly-plug-ecoflow-in", // "192.168.1.52" name or ip of your shelly switch
+    shellySwitchIn: "shelly-plug-ecoflow-in", // "192.168.1.52" name or ip of your shelly switch
+    shellySwitchOut: "shelly-plug-ecoflow-out", // "192.168.1.10", // name or ip of your shelly switch
     phase: "b_act_power", // Phase! other values: a_act_power, c_act_power or total_act_power
-    powerThresholdMin: -60, // start charging or increase charging power when power is less than
-    powerThresholdMax: 20, // stop charging or decrease charging power when power is more than
+    powerThresholdMin: -50, // start charging or increase charging power when power is less than
+    powerThresholdMax: 10, // stop charging or decrease charging power when power is more than
     chargingStep: 25, // change charging power in steps of chargingStep watts
     maxCharging: 1500, // set maximum charging power for ecoflow
     lockingTime: 5, // after changing charge speed wait n times before changing again
@@ -43,9 +44,11 @@ let ecoflow = {
 }
 
 let ecoFlowCharging = false;
+let ecoFlowDischarging = false;
 
 
 function getPowerAndAdaptCharging() {
+    getEcoflowOutState()
     Shelly.call('Shelly.GetStatus', '',
         function(response, error_code, error_message) {
             let power  = response["em:0"][CONFIG.phase]
@@ -69,7 +72,7 @@ function getPowerAndAdaptCharging() {
                 print("Power: " + power + " Avg: " + avgPower + " not charging.")
             }
 
-            if (!ecoFlowCharging && !Power.powerChangeLocked() && (avgPower < CONFIG.powerThresholdMin)) {
+            if (!ecoFlowCharging && !Power.powerChangeLocked() && (avgPower < CONFIG.powerThresholdMin) && !ecoFlowDischarging) {
                 print ("Start Charging!")
                 switchEcoflow(true)
             } else if (ecoFlowCharging && !Power.powerChangeLocked() && (avgPower > CONFIG.powerThresholdMax) && Power.chargingPower === 0) {
@@ -83,10 +86,11 @@ function getPowerAndAdaptCharging() {
 
 
 function switchEcoflow(on) {
-    // print ("request: http://" + CONFIG.shellySwitch + "/rpc/Switch.Set?id=0&on=" + on)
+  
+    // print ("request: http://" + CONFIG.shellySwitchIn + "/rpc/Switch.Set?id=0&on=" + on)
     Shelly.call(
         "HTTP.GET",
-        {url: "http://" + CONFIG.shellySwitch + "/rpc/Switch.Set?id=0&on=" + on},
+        {url: "http://" + CONFIG.shellySwitchIn + "/rpc/Switch.Set?id=0&on=" + on},
         function(result, error_code, error_message) {
             if (error_code !== 0) {
                 print('Error! ' + error_message);
@@ -97,6 +101,28 @@ function switchEcoflow(on) {
                 notify((on ? "Start":"Stop") + "+charging+ecoflow.")
                 ecoFlowCharging = on
                 setEcoflowChargingPower(0)
+            }
+        });
+}
+
+function  getEcoflowOutState() {
+    //print ("request: http://" + CONFIG.shellySwitchOut + "/rpc/Switch.GetStatus?id=0");
+    Shelly.call(
+        "HTTP.GET",
+        {url: "http://" + CONFIG.shellySwitchOut + "/rpc/Shelly.GetStatus?id=0"},
+        function(result, error_code, error_message, ud) {
+            //print("result: " + result + " " + error_code + " " + error_message + " " + ud)
+            if (error_code !== 0) {
+                print('Error! ' + error_message);
+            } else {
+                let data = JSON.parse(result.body);
+                let s = data['switch:0'].output;
+                //print("state: " + s + " data: " + JSON.stringify(data['switch:0']));
+                if (s != ecoFlowDischarging) {
+                  print("Discharging " + (s ? "starts." : "stops."));
+                  ecoFlowDischarging = s;
+                }
+                // print("switch is " + ecoFlowDischarging)
             }
         });
 }
