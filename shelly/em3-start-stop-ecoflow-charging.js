@@ -29,7 +29,7 @@ let CONFIG = {
     powerThresholdMax: 10, // stop charging or decrease charging power when power is more than
     chargingStep: 25, // change charging power in steps of chargingStep watts
     maxCharging: 1500, // set maximum charging power for ecoflow
-    lockingTime: 5, // after changing charge speed wait n times before changing again
+    lockingTime: 3, // after changing charge speed wait n times before changing again
 };
 
 let phone
@@ -45,6 +45,7 @@ let ecoflow = {
 
 let ecoFlowCharging = false;
 let ecoFlowDischarging = false;
+let ecoFlowSOC = 0;
 
 
 function getPowerAndAdaptCharging() {
@@ -86,7 +87,7 @@ function getPowerAndAdaptCharging() {
 
 
 function switchEcoflow(on) {
-  
+
     // print ("request: http://" + CONFIG.shellySwitchIn + "/rpc/Switch.Set?id=0&on=" + on)
     Shelly.call(
         "HTTP.GET",
@@ -119,8 +120,8 @@ function  getEcoflowOutState() {
                 let s = data['switch:0'].output;
                 //print("state: " + s + " data: " + JSON.stringify(data['switch:0']));
                 if (s != ecoFlowDischarging) {
-                  print("Discharging " + (s ? "starts." : "stops."));
-                  ecoFlowDischarging = s;
+                    print("Discharging " + (s ? "starts." : "stops."));
+                    ecoFlowDischarging = s;
                 }
                 // print("switch is " + ecoFlowDischarging)
             }
@@ -189,6 +190,10 @@ function initConfig() {
             setEcoflowChargingPower(0)
             switchEcoflow(true)
 
+            let topic = "/app/device/property/" + ecoflow.batteries[0].sn;
+            print ("subscribe topic: " + topic)
+            MQTT.subscribe(topic, mqttCallback);
+
             Timer.set(CONFIG.checkingTime, true, getPowerAndAdaptCharging);
         }
     );
@@ -200,6 +205,16 @@ function initConfig() {
     }
 }
 initConfig()
+
+function mqttCallback(topic, message) {
+    let msg = JSON.parse(message);
+    let soc = msg.params['bmsMaster.soc'];
+    if (soc > 0) {
+        print("SOC: " + soc);
+        ecoFlowSOC = soc;
+    }
+    // print(message);
+}
 
 let Power = {
     history: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
