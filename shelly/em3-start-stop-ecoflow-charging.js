@@ -27,9 +27,9 @@ let CONFIG = {
     phase: "b_act_power", // Phase! other values: a_act_power, c_act_power or total_act_power
     powerThresholdMin: -50, // start charging or increase charging power when power is less than
     powerThresholdMax: 10, // stop charging or decrease charging power when power is more than
-    chargingStep: 25, // change charging power in steps of chargingStep watts
+    chargingStep: 50, // change charging power in steps of chargingStep watts
     maxCharging: 1500, // set maximum charging power for ecoflow
-    lockingTime: 3, // after changing charge speed wait n times before changing again
+    lockingTime: 8, // after changing charge speed wait n times before changing again
 };
 
 let phone
@@ -58,6 +58,7 @@ function getPowerAndAdaptCharging() {
 
             let newChargingPower = 0
             if (ecoFlowCharging && !Power.powerChangeLocked()) {
+              /*
                 if (avgPower < CONFIG.powerThresholdMin) {
                     newChargingPower = Power.chargingPower + CONFIG.chargingStep
                     setEcoflowChargingPower(newChargingPower)
@@ -66,11 +67,14 @@ function getPowerAndAdaptCharging() {
                     newChargingPower = Power.chargingPower - CONFIG.chargingStep
                     setEcoflowChargingPower(newChargingPower)
                 }
+                */
+                newChargingPower = Power.chargingPower - avgPower;
+                setEcoflowChargingPower(newChargingPower);
             }
             if (ecoFlowCharging) {
-                print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower)
+                print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower + " lock: " + Power.changePowerLock + " soc: " + ecoFlowSOC)
             } else {
-                print("Power: " + power + " Avg: " + avgPower + " not charging.")
+                print("Power: " + power + " Avg: " + avgPower + " soc: " + ecoFlowSOC + " not charging.")
             }
 
             if (!ecoFlowCharging && !Power.powerChangeLocked() && (avgPower < CONFIG.powerThresholdMin) && !ecoFlowDischarging) {
@@ -130,11 +134,12 @@ function  getEcoflowOutState() {
 
 function setEcoflowChargingPower(watts) {
     if(!MQTT.isConnected()) {
+        print ("warning: MQTT is disconnected...")
         return
     }
     // round to CONFIG.chargingStep
     watts /= CONFIG.chargingStep
-    watts = Math.round(watts) * CONFIG.chargingStep
+    watts = Math.floor(watts) * CONFIG.chargingStep
     if (watts < 0) {
         watts = 0
     }
@@ -189,11 +194,11 @@ function initConfig() {
             print ("ecoflow configuration from KVS: " + JSON.stringify(ecoflow))
             setEcoflowChargingPower(0)
             switchEcoflow(true)
-
+/*
             let topic = "/app/device/property/" + ecoflow.batteries[0].sn;
             print ("subscribe topic: " + topic)
             MQTT.subscribe(topic, mqttCallback);
-
+*/
             Timer.set(CONFIG.checkingTime, true, getPowerAndAdaptCharging);
         }
     );
@@ -210,7 +215,7 @@ function mqttCallback(topic, message) {
     let msg = JSON.parse(message);
     let soc = msg.params['bmsMaster.soc'];
     if (soc > 0) {
-        print("SOC: " + soc);
+        //print("SOC: " + soc);
         ecoFlowSOC = soc;
     }
     // print(message);
@@ -248,7 +253,9 @@ let Power = {
             this.history[i - 1] = this.history[i]
         }
         this.history[this.history.length - 1] = 0
-        this.changePowerLock--
+        if (this.changePowerLock > 0) {
+          this.changePowerLock--
+        }
     }
 
 }
