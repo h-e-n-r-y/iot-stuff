@@ -24,6 +24,9 @@ let CONFIG = {
     checkingTime: 10 * 1000, // check every 10 seconds
     shellySwitchIn: "shelly-plug-ecoflow-in", // "192.168.1.52" name or ip of your shelly switch
     shellySwitchOut: "shelly-plug-ecoflow-out", // "192.168.1.10", // name or ip of your shelly switch
+    shellySwitchIn2: "192.168.1.62", // secondary battery
+    in2ChargingPower: 200, // fixed charging power in watts for 2nd battery
+    in2Name: "Anker",
     phase: "b_act_power", // Phase! other values: a_act_power, c_act_power or total_act_power
     powerThresholdMin: -50, // start charging or increase charging power when power is less than
     powerThresholdMax: 10, // stop charging or decrease charging power when power is more than
@@ -44,68 +47,85 @@ let ecoflow = {
 }
 
 let ecoFlowCharging = false;
+let battery2Charging = false;
 let ecoFlowDischarging = false;
 let ecoFlowSOC = 0;
 
 
 function getPowerAndAdaptCharging() {
-    getEcoflowOutState()
-    Shelly.call('Shelly.GetStatus', '',
-        function(response, error_code, error_message) {
-            let power  = response["em:0"][CONFIG.phase]
-            Power.writeHistory(power)
-            let avgPower = Power.median()
+    try {
+        getEcoflowOutState()
+        Shelly.call('Shelly.GetStatus', '',
+            function(response, error_code, error_message) {
+                let power  = response["em:0"][CONFIG.phase]
+                Power.writeHistory(power)
+                let avgPower = Power.median()
 
-            let newChargingPower = 0
-            if (ecoFlowCharging && !Power.powerChangeLocked()) {
-              /*
-                if (avgPower < CONFIG.powerThresholdMin) {
-                    newChargingPower = Power.chargingPower + CONFIG.chargingStep
-                    setEcoflowChargingPower(newChargingPower)
+                let newChargingPower = 0
+                if (ecoFlowCharging && !Power.powerChangeLocked()) {
+                    /*
+                      if (avgPower < CONFIG.powerThresholdMin) {
+                          newChargingPower = Power.chargingPower + CONFIG.chargingStep
+                          setEcoflowChargingPower(newChargingPower)
+                      }
+                      if (avgPower > CONFIG.powerThresholdMax) {
+                          newChargingPower = Power.chargingPower - CONFIG.chargingStep
+                          setEcoflowChargingPower(newChargingPower)
+                      }
+                      */
+                    newChargingPower = Power.chargingPower - avgPower;
+                    setEcoflowChargingPower(newChargingPower);
                 }
-                if (avgPower > CONFIG.powerThresholdMax) {
-                    newChargingPower = Power.chargingPower - CONFIG.chargingStep
-                    setEcoflowChargingPower(newChargingPower)
+                if (ecoFlowCharging) {
+                    print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower + " lock: " + Power.changePowerLock + " soc: " + ecoFlowSOC)
+                } else {
+                    print("Power: " + power + " Avg: " + avgPower + " soc: " + ecoFlowSOC + " not charging.")
                 }
-                */
-                newChargingPower = Power.chargingPower - avgPower;
-                setEcoflowChargingPower(newChargingPower);
-            }
-            if (ecoFlowCharging) {
-                print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower + " lock: " + Power.changePowerLock + " soc: " + ecoFlowSOC)
-            } else {
-                print("Power: " + power + " Avg: " + avgPower + " soc: " + ecoFlowSOC + " not charging.")
-            }
 
-            if (!ecoFlowCharging && !Power.powerChangeLocked() && (avgPower < CONFIG.powerThresholdMin) && !ecoFlowDischarging) {
-                print ("Start Charging!")
-                switchEcoflow(true)
-            } else if (ecoFlowCharging && !Power.powerChangeLocked() && (avgPower > CONFIG.powerThresholdMax) && Power.chargingPower === 0) {
-                print ("Stop Charging!")
-                switchEcoflow(false)
-            }
+                if (!ecoFlowCharging && !Power.powerChangeLocked() && (avgPower < CONFIG.powerThresholdMin) && !ecoFlowDischarging) {
+                    print ("Start Charging!")
+                    switchEcoflow(true)
+                } else if (ecoFlowCharging && !Power.powerChangeLocked() && (avgPower > CONFIG.powerThresholdMax) && Power.chargingPower === 0) {
+                    print ("Stop Charging!")
+                    switchEcoflow(false)
+                }
 
-        }
-    );
+            }
+        );
+    } catch (err) {
+        print "ERROR: " + err
+    }
 }
 
 
 function switchEcoflow(on) {
+    switchBatteryIn(CONFIG.shellySwitchIn, "EcoFlow", on);
+    if (!on) {
+        setEcoflowChargingPower(0)
+    }
+}
+function switchBattery2(on) {
+    switchBatteryIn(CONFIG.shellySwitchIn2, CONFIG.in2Name, on);
+}
+function switchBatteryIn(address, name, on) {
 
     // print ("request: http://" + CONFIG.shellySwitchIn + "/rpc/Switch.Set?id=0&on=" + on)
     Shelly.call(
         "HTTP.GET",
-        {url: "http://" + CONFIG.shellySwitchIn + "/rpc/Switch.Set?id=0&on=" + on},
+        {url: "http://" + address + "/rpc/Switch.Set?id=0&on=" + on},
         function(result, error_code, error_message) {
             if (error_code !== 0) {
                 print('Error! ' + error_message);
-                notify("Switching+ecoflow+" + (on ? "on":"off") + "+failed.")
+                notify("Switching+" + name + "+" + (on ? "on":"off") + "+failed.");
             } else {
                 let data = JSON.parse(result.body);
-                print("Success performing switch from " + (JSON.stringify(data["was_on"]) ? "on":"off") + " to " + (on ? "on":"off"));
-                notify((on ? "Start":"Stop") + "+charging+ecoflow.")
-                ecoFlowCharging = on
-                setEcoflowChargingPower(0)
+                print("Success performing switch " + name + "-In from " + (JSON.stringify(data["was_on"]) ? "on":"off") + " to " + (on ? "on":"off"));
+                notify((on ? "Start":"Stop") + "+charging+" + name + ".");
+                if (address === CONFIG.shellySwitchIn) {
+                    ecoFlowCharging = on;
+                } else {
+                    battery2Charging = on;
+                }
             }
         });
 }
@@ -147,6 +167,18 @@ function setEcoflowChargingPower(watts) {
         watts = CONFIG.maxCharging
     }
     if (watts !== Power.chargingPower) {
+        if (!battery2Charging && (watts > CONFIG.in2ChargingPower + 100)) {
+            // start charging battery2
+            watts -= CONFIG.in2ChargingPower;
+            switchBattery2(true);
+        } else if (battery2Charging && (watts < 50)) {
+            // stop charging battery2
+            watts += CONFIG.in2ChargingPower;
+            switchBattery2(false);
+        }
+        if (watts < 0) {
+            watts = 0
+        }
         print("Setting ecoflow charging power to " + watts)
 
         ecoflow.batteries.forEach(function(battery) {
@@ -194,11 +226,11 @@ function initConfig() {
             print ("ecoflow configuration from KVS: " + JSON.stringify(ecoflow))
             setEcoflowChargingPower(0)
             switchEcoflow(true)
-/*
-            let topic = "/app/device/property/" + ecoflow.batteries[0].sn;
-            print ("subscribe topic: " + topic)
-            MQTT.subscribe(topic, mqttCallback);
-*/
+            /*
+                        let topic = "/app/device/property/" + ecoflow.batteries[0].sn;
+                        print ("subscribe topic: " + topic)
+                        MQTT.subscribe(topic, mqttCallback);
+            */
             Timer.set(CONFIG.checkingTime, true, getPowerAndAdaptCharging);
         }
     );
@@ -222,7 +254,7 @@ function mqttCallback(topic, message) {
 }
 
 let Power = {
-    history: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    history: [0, 0, 0, 0, 0, 0, 0], // specify length of history for median calculation
     chargingPower: -1,
     changePowerLock: CONFIG.lockingTime,
 
@@ -254,7 +286,7 @@ let Power = {
         }
         this.history[this.history.length - 1] = 0
         if (this.changePowerLock > 0) {
-          this.changePowerLock--
+            this.changePowerLock--
         }
     }
 
