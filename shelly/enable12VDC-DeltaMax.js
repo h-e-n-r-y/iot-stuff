@@ -21,7 +21,8 @@
 
 */
 let CONFIG = {
-    checkingTime: 3600 * 1000, // check every 1 hour
+    checkingTime: 600 * 1000, // check every 1/2 hour
+    scriptToStart: "start-stop-ecflow-charging",
 };
 
 let phone
@@ -37,32 +38,35 @@ let ecoflow = {
 let battery
 
 function enable12VDC() {
-    if(!MQTT.isConnected()) {
-        return
-    }
     let msg = "{\"from\":\"iOS\",\"operateType\":\"TCP\",\"id\":\"680224601\",\"lang\":\"en-us\",\"params\":{\"id\":81,\"enabled\":1},\"version\":\"1.0\"}";
     //print("/app/" + ecoflow.cid + "/" + ecoflow.batteries[1].sn + "/thing/property/set | " + msg);
     MQTT.publish("/app/" + ecoflow.cid + "/" + battery.sn + "/thing/property/set", msg, 0, false);
+
+    Shelly.call('Script.List', '',
+        function(response, error_code, error_message) {
+            response.scripts.forEach(function(script) {
+                // print(script.id + " " + script.name + " " + script.running);
+                if (!script.running && CONFIG.scriptToStart === script.name) {
+                    print("restarting " + script.name + ":" + script.id)
+                    Shelly.call('Script.Start', { id: script.id })
+                }
+            })
+        }
+    );
 }
 
 
 function initConfig() {
     Shelly.call('KVS.GetMany', '',
         function(response, error_code, error_message) {
-            phone  = response.items.phone.value
+            phone  = response.items.phone.value;
             apikeycallmebot = response.items.apikeycallmebot.value
             ecoflow = JSON.parse(response.items.ecoflow.value)
             ecoflow.batteries = JSON.parse(response.items.batteries.value)
-            battery = ecoflow.batteries[1]
+            battery = ecoflow.batteries[0]
             Timer.set(CONFIG.checkingTime, true, enable12VDC);
             enable12VDC()
         }
     );
-
-    if (MQTT.isConnected()) {
-        print("MQTT connected");
-    } else {
-        print ("MQTT disconnected");
-    }
 }
 initConfig()
