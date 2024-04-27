@@ -21,11 +21,11 @@
 
 */
 let CONFIG = {
-    checkingTime: 10 * 1000, // check every 10 seconds
+    checkingTime: 5 * 1000, // check every 10 seconds
     shellySwitchIn: "shelly-plug-ecoflow-in", // "192.168.1.52" name or ip of your shelly switch
     shellySwitchOut: "shelly-plug-ecoflow-out", // "192.168.1.10", // name or ip of your shelly switch
     shellySwitchIn2: "192.168.1.62", // secondary battery
-    in2ChargingPower: 200, // fixed charging power in watts for 2nd battery
+    in2ChargingPower: 300, // fixed charging power in watts for 2nd battery
     in2Name: "Anker",
     phase: "b_act_power", // Phase! other values: a_act_power, c_act_power or total_act_power
     powerThresholdMin: -50, // start charging or increase charging power when power is less than
@@ -119,7 +119,7 @@ function switchBatteryIn(address, name, on) {
                 notify("Switching+" + name + "+" + (on ? "on":"off") + "+failed.");
             } else {
                 let data = JSON.parse(result.body);
-                print("Success performing switch " + name + "-In from " + (JSON.stringify(data["was_on"]) ? "on":"off") + " to " + (on ? "on":"off"));
+                print("Success performing switch " + name + "-In from " + (data.was_on ? "on":"off") + " to " + (on ? "on":"off"));
                 notify((on ? "Start":"Stop") + "+charging+" + name + ".");
                 if (address === CONFIG.shellySwitchIn) {
                     ecoFlowCharging = on;
