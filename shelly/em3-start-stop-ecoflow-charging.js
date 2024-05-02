@@ -25,14 +25,14 @@ let CONFIG = {
     shellySwitchIn: "shelly-plug-ecoflow-in", // "192.168.1.52" name or ip of your shelly switch
     shellySwitchOut: "shelly-plug-ecoflow-out", // "192.168.1.10", // name or ip of your shelly switch
     shellySwitchIn2: "192.168.1.62", // secondary battery
-    in2ChargingPower: 300, // fixed charging power in watts for 2nd battery
+    in2ChargingPower: 2000, // fixed charging power in watts for 2nd battery, high number (>1500) means: do not use
     in2Name: "Anker",
-    phase: "b_act_power", // Phase! other values: a_act_power, c_act_power or total_act_power
+    phase: "total_act_power", // Phase! other values: a_act_power, c_act_power or total_act_power
     powerThresholdMin: -50, // start charging or increase charging power when power is less than
     powerThresholdMax: 10, // stop charging or decrease charging power when power is more than
     chargingStep: 50, // change charging power in steps of chargingStep watts
     maxCharging: 1500, // set maximum charging power for ecoflow
-    lockingTime: 8, // after changing charge speed wait n times before changing again
+    lockingTime: 4, // after changing charge speed wait n times before changing again
 };
 
 let phone
@@ -48,6 +48,7 @@ let ecoflow = {
 
 let ecoFlowCharging = false;
 let battery2Charging = false;
+let in2ChargingPower = CONFIG.in2ChargingPower;
 let ecoFlowDischarging = false;
 let ecoFlowSOC = 0;
 
@@ -55,9 +56,10 @@ let ecoFlowSOC = 0;
 function getPowerAndAdaptCharging() {
     try {
         getEcoflowOutState()
+        getChargingPower2()
         Shelly.call('Shelly.GetStatus', '',
             function(response, error_code, error_message) {
-                let power  = response["em:0"][CONFIG.phase]
+                let power  = Math.floor(response["em:0"][CONFIG.phase])
                 Power.writeHistory(power)
                 let avgPower = Power.median()
 
@@ -77,7 +79,7 @@ function getPowerAndAdaptCharging() {
                     setEcoflowChargingPower(newChargingPower);
                 }
                 if (ecoFlowCharging) {
-                    print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower + " lock: " + Power.changePowerLock + " soc: " + ecoFlowSOC)
+                    print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower + " charging power #2: " + (battery2Charging ? in2ChargingPower : 0) + " lock: " + Power.changePowerLock + " soc: " + ecoFlowSOC)
                 } else {
                     print("Power: " + power + " Avg: " + avgPower + " soc: " + ecoFlowSOC + " not charging.")
                 }
@@ -136,7 +138,7 @@ function  getEcoflowOutState() {
         "HTTP.GET",
         {url: "http://" + CONFIG.shellySwitchOut + "/rpc/Shelly.GetStatus?id=0"},
         function(result, error_code, error_message) {
-            //print("result: " + result + " " + error_code + " " + error_message + " " + ud)
+            //print("result: " + result + " " + error_code + " " + error_message)
             if (error_code !== 0) {
                 print('Error! ' + error_message);
             } else {
@@ -148,6 +150,25 @@ function  getEcoflowOutState() {
                     ecoFlowDischarging = s;
                 }
                 // print("switch is " + ecoFlowDischarging)
+            }
+        });
+}
+
+function  getChargingPower2() {
+    //print ("request: http://" + CONFIG.shellySwitchOut + "/rpc/Switch.GetStatus?id=0");
+    Shelly.call(
+        "HTTP.GET",
+        {url: "http://" + CONFIG.shellySwitchIn2 + "/rpc/Shelly.GetStatus?id=0"},
+        function(result, error_code, error_message) {
+            // print("result: " + result.body + " " + error_code + " " + error_message)
+            if (error_code !== 0) {
+                print('Error! ' + error_message);
+            } else {
+                let data = JSON.parse(result.body);
+                let power = data['switch:0'].apower;
+                if (power > 100) {
+                    in2ChargingPower = Math.floor(power);
+                }
             }
         });
 }
@@ -167,13 +188,13 @@ function setEcoflowChargingPower(watts) {
         watts = CONFIG.maxCharging
     }
     if (watts !== Power.chargingPower) {
-        if (!battery2Charging && (watts > CONFIG.in2ChargingPower + 100)) {
+        if (!battery2Charging && (watts > in2ChargingPower + 100)) {
             // start charging battery2
-            watts -= CONFIG.in2ChargingPower;
+            watts -= in2ChargingPower;
             switchBattery2(true);
         } else if (battery2Charging && (watts < 50)) {
             // stop charging battery2
-            watts += CONFIG.in2ChargingPower;
+            watts += in2ChargingPower;
             switchBattery2(false);
         }
         if (watts < 0) {
@@ -275,7 +296,7 @@ let Power = {
                 min = this.history[i]
             }
         }
-        return (sum - max - min) / (this.history.length - 2)
+        return Math.floor((sum - max - min) / (this.history.length - 2))
     },
     writeHistory: function (power) {
         this.shift()
