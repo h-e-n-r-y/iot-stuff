@@ -114,7 +114,7 @@ function switchBatteryIn(address, name, on) {
     // print ("request: http://" + CONFIG.shellySwitchIn + "/rpc/Switch.Set?id=0&on=" + on)
     Shelly.call(
         "HTTP.GET",
-        {url: "http://" + address + "/rpc/Switch.Set?id=0&on=" + on},
+        {url: "http://" + address + "/rpc/Switch.Set?id=0&on=" + on, timeout: 1},
         function(result, error_code, error_message) {
             if (error_code !== 0) {
                 print('Error! ' + error_message);
@@ -136,7 +136,7 @@ function  getEcoflowOutState() {
     //print ("request: http://" + CONFIG.shellySwitchOut + "/rpc/Switch.GetStatus?id=0");
     Shelly.call(
         "HTTP.GET",
-        {url: "http://" + CONFIG.shellySwitchOut + "/rpc/Shelly.GetStatus?id=0"},
+        {url: "http://" + CONFIG.shellySwitchOut + "/rpc/Shelly.GetStatus?id=0", timeout: 1},
         function(result, error_code, error_message) {
             //print("result: " + result + " " + error_code + " " + error_message)
             if (error_code !== 0) {
@@ -158,7 +158,7 @@ function  getChargingPower2() {
     //print ("request: http://" + CONFIG.shellySwitchOut + "/rpc/Switch.GetStatus?id=0");
     Shelly.call(
         "HTTP.GET",
-        {url: "http://" + CONFIG.shellySwitchIn2 + "/rpc/Shelly.GetStatus?id=0"},
+        {url: "http://" + CONFIG.shellySwitchIn2 + "/rpc/Shelly.GetStatus?id=0", timeout: 1},
         function(result, error_code, error_message) {
             // print("result: " + result.body + " " + error_code + " " + error_message)
             if (error_code !== 0) {
@@ -224,7 +224,7 @@ function notify(message) {
     if (phone && apikeycallmebot) {
         Shelly.call(
             "HTTP.GET",
-            {url: "https://api.callmebot.com/whatsapp.php?phone=" + phone + "&apikey=" + apikeycallmebot + "&text=" + message},
+            {url: "https://api.callmebot.com/whatsapp.php?phone=" + phone + "&apikey=" + apikeycallmebot + "&text=" + message, timeout: 1},
             function(result, error_code, error_message) {
                 if (error_code !== 0) {
                     print("Error! " + error_message);
