@@ -57,46 +57,46 @@ function getPowerAndAdaptCharging() {
     try {
         getEcoflowOutState()
         getChargingPower2()
-        Shelly.call('Shelly.GetStatus', '',
-            function(response, error_code, error_message) {
-                let power  = Math.floor(response["em:0"][CONFIG.phase])
-                Power.writeHistory(power)
-                let avgPower = Power.median()
-
-                let newChargingPower = 0
-                if (ecoFlowCharging && !Power.powerChangeLocked()) {
-                    /*
-                      if (avgPower < CONFIG.powerThresholdMin) {
-                          newChargingPower = Power.chargingPower + CONFIG.chargingStep
-                          setEcoflowChargingPower(newChargingPower)
-                      }
-                      if (avgPower > CONFIG.powerThresholdMax) {
-                          newChargingPower = Power.chargingPower - CONFIG.chargingStep
-                          setEcoflowChargingPower(newChargingPower)
-                      }
-                      */
-                    newChargingPower = Power.chargingPower - avgPower;
-                    setEcoflowChargingPower(newChargingPower);
-                }
-                if (ecoFlowCharging) {
-                    print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower + " charging power #2: " + (battery2Charging ? in2ChargingPower : 0) + " lock: " + Power.changePowerLock + " soc: " + ecoFlowSOC)
-                } else {
-                    print("Power: " + power + " Avg: " + avgPower + " soc: " + ecoFlowSOC + " not charging.")
-                }
-
-                if (!ecoFlowCharging && !Power.powerChangeLocked() && (avgPower < CONFIG.powerThresholdMin) && !ecoFlowDischarging) {
-                    print ("Start Charging!")
-                    switchEcoflow(true)
-                } else if (ecoFlowCharging && !Power.powerChangeLocked() && (avgPower > CONFIG.powerThresholdMax) && Power.chargingPower === 0) {
-                    print ("Stop Charging!");
-                    switchEcoflow(false);
-                }
-
-            }
-        );
+        Shelly.call('Shelly.GetStatus', '', getPowerAndAdaptChargingCallback);
     } catch (err) {
         print("ERROR: " + err);
     }
+}
+
+function getPowerAndAdaptChargingCallback(response, error_code, error_message) {
+    let power  = Math.floor(response["em:0"][CONFIG.phase])
+    Power.writeHistory(power)
+    let avgPower = Power.median()
+
+    let newChargingPower = 0
+    if (ecoFlowCharging && !Power.powerChangeLocked()) {
+        /*
+          if (avgPower < CONFIG.powerThresholdMin) {
+              newChargingPower = Power.chargingPower + CONFIG.chargingStep
+              setEcoflowChargingPower(newChargingPower)
+          }
+          if (avgPower > CONFIG.powerThresholdMax) {
+              newChargingPower = Power.chargingPower - CONFIG.chargingStep
+              setEcoflowChargingPower(newChargingPower)
+          }
+          */
+        newChargingPower = Power.chargingPower - avgPower;
+        setEcoflowChargingPower(newChargingPower);
+    }
+    if (ecoFlowCharging) {
+        print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower + " charging power #2: " + (battery2Charging ? in2ChargingPower : 0) + " lock: " + Power.changePowerLock + " soc: " + ecoFlowSOC)
+    } else {
+        print("Power: " + power + " Avg: " + avgPower + " soc: " + ecoFlowSOC + " not charging.")
+    }
+
+    if (!ecoFlowCharging && !Power.powerChangeLocked() && (avgPower < CONFIG.powerThresholdMin) && !ecoFlowDischarging) {
+        print ("Start Charging!")
+        switchEcoflow(true)
+    } else if (ecoFlowCharging && !Power.powerChangeLocked() && (avgPower > CONFIG.powerThresholdMax) && Power.chargingPower === 0) {
+        print ("Stop Charging!");
+        switchEcoflow(false);
+    }
+
 }
 
 
@@ -110,67 +110,77 @@ function switchBattery2(on) {
     switchBatteryIn(CONFIG.shellySwitchIn2, CONFIG.in2Name, on);
 }
 function switchBatteryIn(address, name, on) {
+    let data = {};
+    data.name = name;
+    data.on = on;
+    data.address = address;
 
     // print ("request: http://" + CONFIG.shellySwitchIn + "/rpc/Switch.Set?id=0&on=" + on)
     Shelly.call(
         "HTTP.GET",
         {url: "http://" + address + "/rpc/Switch.Set?id=0&on=" + on, timeout: 1},
-        function(result, error_code, error_message) {
-            if (error_code !== 0) {
-                print('Error! ' + error_message);
-                notify("Switching+" + name + "+" + (on ? "on":"off") + "+failed.");
-            } else {
-                let data = JSON.parse(result.body);
-                print("Success performing switch " + name + "-In from " + (data.was_on ? "on":"off") + " to " + (on ? "on":"off"));
-                notify((on ? "Start":"Stop") + "+charging+" + name + ".");
-                if (address === CONFIG.shellySwitchIn) {
-                    ecoFlowCharging = on;
-                } else {
-                    battery2Charging = on;
-                }
-            }
-        });
+        switchBatteryInCallback,
+        data);
+}
+function switchBatteryInCallback(result, error_code, error_message, ud) {
+    if (error_code !== 0) {
+        print('Error switching battery ' + ud.name + ': ' + error_message);
+        notify("Switching+" + ud.name + "+" + (ud.on ? "on":"off") + "+failed.");
+    } else {
+        let data = JSON.parse(result.body);
+        print("Success performing switch " + ud.name + "-In from " + (data.was_on ? "on":"off") + " to " + (ud.on ? "on":"off"));
+        notify((ud.on ? "Start":"Stop") + "+charging+" + ud.name + ".");
+        if (ud.address === CONFIG.shellySwitchIn) {
+            ecoFlowCharging = ud.on;
+        } else {
+            battery2Charging = ud.on;
+        }
+    }
 }
 
-function  getEcoflowOutState() {
+function getEcoflowOutState() {
     //print ("request: http://" + CONFIG.shellySwitchOut + "/rpc/Switch.GetStatus?id=0");
     Shelly.call(
         "HTTP.GET",
         {url: "http://" + CONFIG.shellySwitchOut + "/rpc/Shelly.GetStatus?id=0", timeout: 1},
-        function(result, error_code, error_message) {
-            //print("result: " + result + " " + error_code + " " + error_message)
-            if (error_code !== 0) {
-                print('Error! ' + error_message);
-            } else {
-                let data = JSON.parse(result.body);
-                let s = data['switch:0'].output;
-                //print("state: " + s + " data: " + JSON.stringify(data['switch:0']));
-                if (s !== ecoFlowDischarging) {
-                    print("Discharging " + (s ? "starts." : "stops."));
-                    ecoFlowDischarging = s;
-                }
-                // print("switch is " + ecoFlowDischarging)
-            }
-        });
+        getEcoflowOutStateCallback);
 }
 
-function  getChargingPower2() {
+function getEcoflowOutStateCallback(result, error_code, error_message) {
+    //print("result: " + result + " " + error_code + " " + error_message)
+    if (error_code !== 0) {
+        print('Error getting EcoflowOutState! ' + error_message);
+    } else {
+        let data = JSON.parse(result.body);
+        let s = data['switch:0'].output;
+        //print("state: " + s + " data: " + JSON.stringify(data['switch:0']));
+        if (s !== ecoFlowDischarging) {
+            print("Discharging " + (s ? "starts." : "stops."));
+            ecoFlowDischarging = s;
+        }
+        // print("switch is " + ecoFlowDischarging)
+    }
+}
+
+function getChargingPower2() {
     //print ("request: http://" + CONFIG.shellySwitchOut + "/rpc/Switch.GetStatus?id=0");
     Shelly.call(
         "HTTP.GET",
         {url: "http://" + CONFIG.shellySwitchIn2 + "/rpc/Shelly.GetStatus?id=0", timeout: 1},
-        function(result, error_code, error_message) {
-            // print("result: " + result.body + " " + error_code + " " + error_message)
-            if (error_code !== 0) {
-                print('Error! ' + error_message);
-            } else {
-                let data = JSON.parse(result.body);
-                let power = data['switch:0'].apower;
-                if (power > 100) {
-                    in2ChargingPower = Math.floor(power);
-                }
-            }
-        });
+        getChargingPower2Callback);
+}
+
+function getChargingPower2Callback(result, error_code, error_message) {
+    // print("result: " + result.body + " " + error_code + " " + error_message)
+    if (error_code !== 0) {
+        print('Error getting ChargingPower2! ' + error_message);
+    } else {
+        let data = JSON.parse(result.body);
+        let power = data['switch:0'].apower;
+        if (power > 100) {
+            in2ChargingPower = Math.floor(power);
+        }
+    }
 }
 
 function setEcoflowChargingPower(watts) {
@@ -224,10 +234,10 @@ function notify(message) {
     if (phone && apikeycallmebot) {
         Shelly.call(
             "HTTP.GET",
-            {url: "https://api.callmebot.com/whatsapp.php?phone=" + phone + "&apikey=" + apikeycallmebot + "&text=" + message, timeout: 1},
+            {url: "https://api.callmebot.com/whatsapp.php?phone=" + phone + "&apikey=" + apikeycallmebot + "&text=" + message, timeout: 10},
             function(result, error_code, error_message) {
                 if (error_code !== 0) {
-                    print("Error! " + error_message);
+                    print("Error sending Whatsapp! " + error_message);
                 } else {
                     // print("Success sending message: " + result.body);
                 }
@@ -236,32 +246,32 @@ function notify(message) {
 }
 
 function initConfig() {
-    Shelly.call('KVS.GetMany', '',
-        function(response, error_code, error_message) {
-            // print (response)
-            phone  = response.items.phone.value
-            apikeycallmebot = response.items.apikeycallmebot.value
-            ecoflow = JSON.parse(response.items.ecoflow.value)
-            ecoflow.batteries = JSON.parse(response.items.batteries.value)
-
-            print ("ecoflow configuration from KVS: " + JSON.stringify(ecoflow))
-            setEcoflowChargingPower(0)
-            switchEcoflow(true)
-            switchBattery2(false)
-            /*
-                        let topic = "/app/device/property/" + ecoflow.batteries[0].sn;
-                        print ("subscribe topic: " + topic)
-                        MQTT.subscribe(topic, mqttCallback);
-            */
-            Timer.set(CONFIG.checkingTime, true, getPowerAndAdaptCharging);
-        }
-    );
+    Shelly.call('KVS.GetMany', '', initConfigCallback);
 
     if (MQTT.isConnected()) {
         print("MQTT connected");
     } else {
         print ("MQTT disconnected");
     }
+}
+
+function initConfigCallback(response, error_code, error_message) {
+    // print (response)
+    phone  = response.items.phone.value
+    apikeycallmebot = response.items.apikeycallmebot.value
+    ecoflow = JSON.parse(response.items.ecoflow.value)
+    ecoflow.batteries = JSON.parse(response.items.batteries.value)
+
+    print ("ecoflow configuration from KVS: " + JSON.stringify(ecoflow))
+    setEcoflowChargingPower(0)
+    switchEcoflow(true)
+    switchBattery2(false)
+    /*
+                let topic = "/app/device/property/" + ecoflow.batteries[0].sn;
+                print ("subscribe topic: " + topic)
+                MQTT.subscribe(topic, mqttCallback);
+    */
+    Timer.set(CONFIG.checkingTime, true, getPowerAndAdaptCharging);
 }
 initConfig()
 
