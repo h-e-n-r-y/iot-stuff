@@ -51,15 +51,21 @@ let battery2Charging = false;
 let in2ChargingPower = CONFIG.in2ChargingPower;
 let ecoFlowDischarging = false;
 let ecoFlowSOC = 0;
-
+let alternatingCall = false;
 
 function getPowerAndAdaptCharging() {
     try {
-        getEcoflowOutState()
-        getChargingPower2()
+        if (alternatingCall) { // avoid "too many calls in progress"
+            getEcoflowOutState()
+        } else {
+            getChargingPower2()
+        }
+        alternatingCall = !alternatingCall;
+
         Shelly.call('Shelly.GetStatus', '', getPowerAndAdaptChargingCallback);
     } catch (err) {
         print("ERROR: " + err);
+        exit;
     }
 }
 
@@ -109,13 +115,19 @@ function switchEcoflow(on) {
 function switchBattery2(on) {
     switchBatteryIn(CONFIG.shellySwitchIn2, CONFIG.in2Name, on);
 }
+
+let switchBatteryInProgress = [];
 function switchBatteryIn(address, name, on) {
+    if (switchBatteryInProgress[name]) {
+        return;
+    }
     let data = {};
     data.name = name;
     data.on = on;
     data.address = address;
 
     // print ("request: http://" + CONFIG.shellySwitchIn + "/rpc/Switch.Set?id=0&on=" + on)
+    switchBatteryInProgress[name] = true;
     Shelly.call(
         "HTTP.GET",
         {url: "http://" + address + "/rpc/Switch.Set?id=0&on=" + on, timeout: 1},
@@ -123,6 +135,7 @@ function switchBatteryIn(address, name, on) {
         data);
 }
 function switchBatteryInCallback(result, error_code, error_message, ud) {
+    switchBatteryInProgress[ud.name] = false;
     if (error_code !== 0) {
         print('Error switching battery ' + ud.name + ': ' + error_message);
         notify("Switching+" + ud.name + "+" + (ud.on ? "on":"off") + "+failed.");
@@ -138,7 +151,12 @@ function switchBatteryInCallback(result, error_code, error_message, ud) {
     }
 }
 
+let getEcoflowOutStateInProgress = false;
 function getEcoflowOutState() {
+    if (getEcoflowOutStateInProgress) {
+        return;
+    }
+    getEcoflowOutStateInProgress = true;
     //print ("request: http://" + CONFIG.shellySwitchOut + "/rpc/Switch.GetStatus?id=0");
     Shelly.call(
         "HTTP.GET",
@@ -147,6 +165,7 @@ function getEcoflowOutState() {
 }
 
 function getEcoflowOutStateCallback(result, error_code, error_message) {
+    getEcoflowOutStateInProgress = false;
     //print("result: " + result + " " + error_code + " " + error_message)
     if (error_code !== 0) {
         print('Error getting EcoflowOutState! ' + error_message);
@@ -162,7 +181,12 @@ function getEcoflowOutStateCallback(result, error_code, error_message) {
     }
 }
 
+let getChargingPower2InProgress = false;
 function getChargingPower2() {
+    if (getChargingPower2InProgress) {
+        return;
+    }
+    getChargingPower2InProgress = true;
     //print ("request: http://" + CONFIG.shellySwitchOut + "/rpc/Switch.GetStatus?id=0");
     Shelly.call(
         "HTTP.GET",
@@ -171,6 +195,7 @@ function getChargingPower2() {
 }
 
 function getChargingPower2Callback(result, error_code, error_message) {
+    getChargingPower2InProgress = false;
     // print("result: " + result.body + " " + error_code + " " + error_message)
     if (error_code !== 0) {
         print('Error getting ChargingPower2! ' + error_message);

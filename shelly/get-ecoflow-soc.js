@@ -23,7 +23,7 @@ function initConfig() {
     Shelly.call('KVS.GetMany', '',
         function(response, error_code, error_message) {
             // print (response)
-            phone  = response.items.phone.value
+            phone = response.items.phone.value
             apikeycallmebot = response.items.apikeycallmebot.value
             ecoflow = JSON.parse(response.items.ecoflow.value)
             ecoflow.batteries = JSON.parse(response.items.batteries.value)
