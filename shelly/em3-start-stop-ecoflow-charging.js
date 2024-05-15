@@ -21,7 +21,8 @@
 
 */
 let CONFIG = {
-    checkingTime: 5 * 1000, // check every 10 seconds
+    checkingTime: 5 * 1000, // check every 5 seconds
+    checkingTimeSOC: 120 * 1000, // every 2 minutes
     shellySwitchIn: "shelly-plug-ecoflow-in", // "192.168.1.52" name or ip of your shelly switch
     shellySwitchOut: "shelly-plug-ecoflow-out", // "192.168.1.10", // name or ip of your shelly switch
     shellySwitchIn2: "192.168.1.62", // secondary battery
@@ -51,6 +52,7 @@ let battery2Charging = false;
 let realChargingPower = [0, CONFIG.in2ChargingPower];
 let ecoFlowDischarging = false;
 let ecoFlowSOC = 0;
+let ecoFlowSOCSlave1 = 0;
 let alternatingCall = 0;
 
 function getPowerAndAdaptCharging() {
@@ -90,9 +92,9 @@ function getPowerAndAdaptChargingCallback(response, error_code, error_message) {
         setEcoflowChargingPower(newChargingPower);
     }
     if (ecoFlowCharging) {
-        print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower + " real charging power: " + realChargingPower[0] + "/" + (battery2Charging ? realChargingPower[1] : 0) + " lock: " + Power.changePowerLock + " soc: " + ecoFlowSOC)
+        print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower + " real charging power: " + realChargingPower[0] + "/" + (battery2Charging ? realChargingPower[1] : 0) + " lock: " + Power.changePowerLock + " soc: " + ecoFlowSOC + "/" + ecoFlowSOCSlave1)
     } else {
-        print("Power: " + power + " Avg: " + avgPower + " soc: " + ecoFlowSOC + " not charging.")
+        print("Power: " + power + " Avg: " + avgPower + " soc: " + ecoFlowSOC + "/" + ecoFlowSOCSlave1 + " not charging.")
     }
 
     if (!ecoFlowCharging && !Power.powerChangeLocked() && (avgPower < CONFIG.powerThresholdMin) && !ecoFlowDischarging) {
@@ -235,6 +237,10 @@ function setEcoflowChargingPower(watts) {
         if (watts < 0) {
             watts = 0
         }
+        if (watts > realChargingPower[0] + 200) {
+            // probably full battery
+            return;
+        }
         print("Setting ecoflow charging power to " + watts)
 
         ecoflow.batteries.forEach(function(battery) {
@@ -291,21 +297,40 @@ function initConfigCallback(response, error_code, error_message) {
     setEcoflowChargingPower(0)
     switchEcoflow(true)
     switchBattery2(false)
-    /*
-                let topic = "/app/device/property/" + ecoflow.batteries[0].sn;
-                print ("subscribe topic: " + topic)
-                MQTT.subscribe(topic, mqttCallback);
-    */
+
     Timer.set(CONFIG.checkingTime, true, getPowerAndAdaptCharging);
+    Timer.set(CONFIG.checkingTimeSOC, true, getSOC);
 }
 initConfig()
 
+let gotSoc = false;
+let gotSocSlave1 = false;
+function getSOC() {
+    let topic = "/app/device/property/" + ecoflow.batteries[0].sn;
+    print("getting battery soc...");
+    // print ("subscribe topic: " + topic)
+    gotSoc = false;
+    gotSocSlave1 = false;
+    MQTT.subscribe(topic, mqttCallback);
+}
+
 function mqttCallback(topic, message) {
+    // print ("mqtt: " + message);
     let msg = JSON.parse(message);
     let soc = msg.params['bmsMaster.soc'];
     if (soc > 0) {
         //print("SOC: " + soc);
         ecoFlowSOC = soc;
+        gotSoc = true;
+    }
+    soc = msg.params['bmsSlave1.soc'];
+    if (soc > 0) {
+        //print("SOC: " + soc);
+        ecoFlowSOCSlave1 = soc;
+        gotSocSlave1 = true;
+    }
+    if (gotSoc && gotSocSlave1) {
+        MQTT.unsubscribe(topic);
     }
     // print(message);
 }
