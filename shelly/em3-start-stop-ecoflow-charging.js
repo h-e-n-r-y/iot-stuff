@@ -171,8 +171,8 @@ function getEcoflowOutStateCallback(result, error_code, error_message) {
         print('Error getting EcoflowOutState! ' + error_message);
     } else {
         let data = JSON.parse(result.body);
-        let s = data['switch:0'].output;
-        //print("state: " + s + " data: " + JSON.stringify(data['switch:0']));
+        let s = data['switch:0'].apower > 10;
+        // print("state: " + s + " data: " + JSON.stringify(data['switch:0'].apower));
         if (s !== ecoFlowDischarging) {
             print("Discharging " + (s ? "starts." : "stops."));
             ecoFlowDischarging = s;
