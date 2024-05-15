@@ -48,19 +48,19 @@ let ecoflow = {
 
 let ecoFlowCharging = false;
 let battery2Charging = false;
-let in2ChargingPower = CONFIG.in2ChargingPower;
+let realChargingPower = [0, CONFIG.in2ChargingPower];
 let ecoFlowDischarging = false;
 let ecoFlowSOC = 0;
-let alternatingCall = false;
+let alternatingCall = 0;
 
 function getPowerAndAdaptCharging() {
     try {
-        if (alternatingCall) { // avoid "too many calls in progress"
+        if (alternatingCall > 1) { // avoid "too many calls in progress"
             getEcoflowOutState()
         } else {
-            getChargingPower2()
+            getChargingPower(alternatingCall)
         }
-        alternatingCall = !alternatingCall;
+        alternatingCall = (alternatingCall + 1) % 3;
 
         Shelly.call('Shelly.GetStatus', '', getPowerAndAdaptChargingCallback);
     } catch (err) {
@@ -90,7 +90,7 @@ function getPowerAndAdaptChargingCallback(response, error_code, error_message) {
         setEcoflowChargingPower(newChargingPower);
     }
     if (ecoFlowCharging) {
-        print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower + " charging power #2: " + (battery2Charging ? in2ChargingPower : 0) + " lock: " + Power.changePowerLock + " soc: " + ecoFlowSOC)
+        print("Power: " + power + " Avg: " + avgPower + " charging power: " + Power.chargingPower + " real charging power: " + realChargingPower[0] + "/" + (battery2Charging ? realChargingPower[1] : 0) + " lock: " + Power.changePowerLock + " soc: " + ecoFlowSOC)
     } else {
         print("Power: " + power + " Avg: " + avgPower + " soc: " + ecoFlowSOC + " not charging.")
     }
@@ -181,21 +181,21 @@ function getEcoflowOutStateCallback(result, error_code, error_message) {
     }
 }
 
-let getChargingPower2InProgress = false;
-function getChargingPower2() {
-    if (getChargingPower2InProgress) {
+let getChargingPowerInProgress = false;
+function getChargingPower(idx) {
+    if (getChargingPowerInProgress) {
         return;
     }
-    getChargingPower2InProgress = true;
+    getChargingPowerInProgress = true;
     //print ("request: http://" + CONFIG.shellySwitchOut + "/rpc/Switch.GetStatus?id=0");
     Shelly.call(
         "HTTP.GET",
         {url: "http://" + CONFIG.shellySwitchIn2 + "/rpc/Shelly.GetStatus?id=0", timeout: 1},
-        getChargingPower2Callback);
+        getChargingPowerCallback, idx);
 }
 
-function getChargingPower2Callback(result, error_code, error_message) {
-    getChargingPower2InProgress = false;
+function getChargingPowerCallback(result, error_code, error_message, idx) {
+    getChargingPowerInProgress = false;
     // print("result: " + result.body + " " + error_code + " " + error_message)
     if (error_code !== 0) {
         print('Error getting ChargingPower2! ' + error_message);
@@ -203,7 +203,7 @@ function getChargingPower2Callback(result, error_code, error_message) {
         let data = JSON.parse(result.body);
         let power = data['switch:0'].apower;
         if (power > 100) {
-            in2ChargingPower = Math.floor(power);
+            realChargingPower[idx] = Math.floor(power);
         }
     }
 }
@@ -223,13 +223,13 @@ function setEcoflowChargingPower(watts) {
         watts = CONFIG.maxCharging
     }
     if (watts !== Power.chargingPower) {
-        if (!battery2Charging && (watts > in2ChargingPower + 100)) {
+        if (!battery2Charging && (watts > realChargingPower[1] + 100)) {
             // start charging battery2
-            watts -= in2ChargingPower;
+            watts -= realChargingPower[1];
             switchBattery2(true);
         } else if (battery2Charging && (watts < 50)) {
             // stop charging battery2
-            watts += in2ChargingPower;
+            watts += realChargingPower[1];
             switchBattery2(false);
         }
         if (watts < 0) {
