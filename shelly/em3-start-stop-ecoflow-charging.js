@@ -21,11 +21,10 @@
 
 */
 let CONFIG = {
-    checkingTime: 5 * 1000, // check every 5 seconds
+    checkingTime: 3 * 1000, // check every 5 seconds
     checkingTimeSOC: 120 * 1000, // every 2 minutes
-    shellySwitchIn: "shelly-plug-ecoflow-in", // "192.168.1.52" name or ip of your shelly switch
+    shellySwitchIn: ["shelly-plug-ecoflow-in","192.168.1.62"], // "192.168.1.52" name or ip of your shelly switch
     shellySwitchOut: "shelly-plug-ecoflow-out", // "192.168.1.10", // name or ip of your shelly switch
-    shellySwitchIn2: "192.168.1.62", // secondary battery
     in2ChargingPower: 2000, // fixed charging power in watts for 2nd battery, high number (>1500) means: do not use
     in2Name: "Anker",
     phase: "total_act_power", // Phase! other values: a_act_power, c_act_power or total_act_power
@@ -33,7 +32,7 @@ let CONFIG = {
     powerThresholdMax: 10, // stop charging or decrease charging power when power is more than
     chargingStep: 50, // change charging power in steps of chargingStep watts
     maxCharging: 1500, // set maximum charging power for ecoflow
-    lockingTime: 4, // after changing charge speed wait n times before changing again
+    lockingTime: 15, // after changing charge speed wait n times before changing again
 };
 
 let phone
@@ -67,7 +66,7 @@ function getPowerAndAdaptCharging() {
         Shelly.call('Shelly.GetStatus', '', getPowerAndAdaptChargingCallback);
     } catch (err) {
         print("ERROR: " + err);
-        exit;
+        throw(err);
     }
 }
 
@@ -109,13 +108,13 @@ function getPowerAndAdaptChargingCallback(response, error_code, error_message) {
 
 
 function switchEcoflow(on) {
-    switchBatteryIn(CONFIG.shellySwitchIn, "EcoFlow", on);
+    switchBatteryIn(CONFIG.shellySwitchIn[0], "EcoFlow", on);
     if (!on) {
         setEcoflowChargingPower(0)
     }
 }
 function switchBattery2(on) {
-    switchBatteryIn(CONFIG.shellySwitchIn2, CONFIG.in2Name, on);
+    switchBatteryIn(CONFIG.shellySwitchIn[1], CONFIG.in2Name, on);
 }
 
 let switchBatteryInProgress = [];
@@ -145,7 +144,7 @@ function switchBatteryInCallback(result, error_code, error_message, ud) {
         let data = JSON.parse(result.body);
         print("Success performing switch " + ud.name + "-In from " + (data.was_on ? "on":"off") + " to " + (ud.on ? "on":"off"));
         notify((ud.on ? "Start":"Stop") + "+charging+" + ud.name + ".");
-        if (ud.address === CONFIG.shellySwitchIn) {
+        if (ud.address === CONFIG.shellySwitchIn[0]) {
             ecoFlowCharging = ud.on;
         } else {
             battery2Charging = ud.on;
@@ -188,11 +187,12 @@ function getChargingPower(idx) {
     if (getChargingPowerInProgress) {
         return;
     }
+    // print("getChargingPower: " + idx)
     getChargingPowerInProgress = true;
-    //print ("request: http://" + CONFIG.shellySwitchOut + "/rpc/Switch.GetStatus?id=0");
+    // print ("request: http://" + CONFIG.shellySwitchIn[idx] + "/rpc/Switch.GetStatus?id=0");
     Shelly.call(
         "HTTP.GET",
-        {url: "http://" + CONFIG.shellySwitchIn2 + "/rpc/Shelly.GetStatus?id=0", timeout: 1},
+        {url: "http://" + CONFIG.shellySwitchIn[idx] + "/rpc/Shelly.GetStatus?id=0", timeout: 1},
         getChargingPowerCallback, idx);
 }
 
@@ -200,7 +200,7 @@ function getChargingPowerCallback(result, error_code, error_message, idx) {
     getChargingPowerInProgress = false;
     // print("result: " + result.body + " " + error_code + " " + error_message)
     if (error_code !== 0) {
-        print('Error getting ChargingPower2! ' + error_message);
+        print('Error getting ChargingPower! ' + error_message);
     } else {
         let data = JSON.parse(result.body);
         let power = data['switch:0'].apower;
@@ -237,7 +237,7 @@ function setEcoflowChargingPower(watts) {
         if (watts < 0) {
             watts = 0
         }
-        if (watts > realChargingPower[0] + 200) {
+        if (watts > realChargingPower[0] + 1000) {
             // probably full battery
             return;
         }
@@ -307,7 +307,7 @@ let gotSoc = false;
 let gotSocSlave1 = false;
 function getSOC() {
     let topic = "/app/device/property/" + ecoflow.batteries[0].sn;
-    print("getting battery soc...");
+    // print("getting battery soc...");
     // print ("subscribe topic: " + topic)
     gotSoc = false;
     gotSocSlave1 = false;
@@ -336,7 +336,8 @@ function mqttCallback(topic, message) {
 }
 
 let Power = {
-    history: [0, 0, 0, 0, 0, 0, 0], // specify length of history for median calculation
+    debug: false,
+    history: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // specify length of history for median calculation
     chargingPower: -1,
     changePowerLock: CONFIG.lockingTime,
 
@@ -356,7 +357,14 @@ let Power = {
                 min = this.history[i]
             }
         }
-        return Math.floor((sum - max - min) / (this.history.length - 2))
+        let values = this.sorted();
+        let med = values[Math.ceil(this.history.length / 2)];
+        //let avg = Math.floor((sum - max - min) / (this.history.length - 2));
+        if (this.debug) {
+            //print("[" + this.history + "] avg: " + avg);
+            print("[" + values + "] med: " + med);
+        }
+        return med; // avg
     },
     writeHistory: function (power) {
         this.shift()
@@ -370,6 +378,31 @@ let Power = {
         if (this.changePowerLock > 0) {
             this.changePowerLock--
         }
+    },
+    sorted: function () {
+        let arr = [];
+        for (i = 0; i < this.history.length; i++) {
+            arr[i] = this.history[i];
+        }
+        for (var i = 0; i < arr.length; i++) {
+
+            // Last i elements are already in place
+            for (var j = 0; j < (arr.length - i - 1); j++) {
+
+                // Checking if the item at present iteration
+                // is greater than the next iteration
+                if (arr[j] > arr[j + 1]) {
+
+                    // If the condition is true
+                    // then swap them
+                    var temp = arr[j]
+                    arr[j] = arr[j + 1]
+                    arr[j + 1] = temp
+                }
+            }
+        }
+
+        return arr;
     }
 
 }
